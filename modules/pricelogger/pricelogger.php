@@ -28,6 +28,7 @@ class PriceLogger extends Module
         return parent::install() &&
             $this->registerHook('actionProductUpdate') &&
             $this->registerHook('displayProductAdditionalInfo') &&
+            $this->registerHook('displayProductPriceBlock') &&
             Db::getInstance()->execute('
                 CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'price_log` (
                     `id_price_log` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -75,6 +76,22 @@ class PriceLogger extends Module
         return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
     }
 
+    public function hookDisplayProductPriceBlock($params)
+    {
+        if ($params['type'] == 'after_price') {
+            $id_product = (int)$params['product']['id_product'];
+            $lastPriceChange = $this->getLastPriceChange($id_product);
+            $lowestPrice = $this->getLowestPriceInLast30Days($id_product);
+
+            $this->context->smarty->assign(array(
+                'lastPriceChange' => $lastPriceChange,
+                'lowestPrice' => $lowestPrice,
+            ));
+
+            return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
+        }
+    }
+
     private function getLastPriceChange($id_product)
     {
         $sql = new DbQuery();
@@ -85,6 +102,21 @@ class PriceLogger extends Module
 //        $sql->limit(1);
 
         return Db::getInstance()->getRow($sql);
+    }
+
+    public function getLowestPriceInLast30Days($id_product)
+    {
+        $thirtyDaysAgo = date('Y-m-d H:i:s', strtotime('-30 days'));
+
+        $sql = new DbQuery();
+        $sql->select('MIN(price) as lowest_price');
+        $sql->from('price_log');
+        $sql->where('id_product = ' . (int)$id_product);
+        $sql->where('date_upd >= \'' . pSQL($thirtyDaysAgo) . '\'');
+
+        $result = Db::getInstance()->getRow($sql);
+
+        return $result ? $result['lowest_price'] : null;
     }
 
     private function logPriceChange($id_product, $id_product_attribute, $price)
