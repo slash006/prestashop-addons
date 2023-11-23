@@ -10,7 +10,7 @@ class PriceLogger extends Module
         $this->name = 'pricelogger';
         $this->tab = 'front_office_features';
         $this->version = '1.0.0';
-        $this->author = 'Twoje Imię';
+        $this->author = 'slash006';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
         $this->bootstrap = true;
@@ -27,6 +27,7 @@ class PriceLogger extends Module
     {
         return parent::install() &&
             $this->registerHook('actionProductUpdate') &&
+            $this->registerHook('displayProductAdditionalInfo') &&
             Db::getInstance()->execute('
                 CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'price_log` (
                     `id_price_log` INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -60,6 +61,30 @@ class PriceLogger extends Module
             $price = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
             $this->logPriceChange($id_product, $id_product_attribute, $price);
         }
+    }
+
+    public function hookDisplayProductAdditionalInfo($params)
+    {
+        $id_product = (int)$params['product']['id_product'];
+        $lastPriceChange = $this->getLastPriceChange($id_product);
+
+        $this->context->smarty->assign(array(
+            'lastPriceChange' => $lastPriceChange,
+        ));
+
+        return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
+    }
+
+    private function getLastPriceChange($id_product)
+    {
+        $sql = new DbQuery();
+        $sql->select('*');
+        $sql->from('price_log');
+        $sql->where('id_product = ' . (int)$id_product);
+        $sql->orderBy('date_upd DESC');
+//        $sql->limit(1);
+
+        return Db::getInstance()->getRow($sql);
     }
 
     private function logPriceChange($id_product, $id_product_attribute, $price)
