@@ -8,6 +8,8 @@
 
 {if isset($lowestPrice)}
     <div class="lowest-price-info">
-        <p>Najniższa cena w ostatnich 30 dniach: {$lowestPrice|escape:'html':'UTF-8'}</p>
+        {assign var="taxRate" value=0.23}
+        {assign var="priceWithTax" value=$lowestPrice * (1 + $taxRate)}
+        <p>Najniższa cena w ostatnich 30 dniach: {$priceWithTax|number_format:2:',':' '|escape:'html':'UTF-8'}zł.</p>
     </div>
 {/if}

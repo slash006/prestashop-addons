@@ -17,8 +17,8 @@ class PriceLogger extends Module
 
         parent::__construct();
 
-        $this->displayName = $this->l('Price Logger');
-        $this->description = $this->l('Logs each product price change, including variations.');
+        $this->displayName = $this->l('Price Logger (Omnibus compatibility)');
+        $this->description = $this->l('Logs each product price change, including variations. Module compliant with the omnibus directive');
 
         $this->confirmUninstall = $this->l('Are you sure you want to uninstall?');
     }
@@ -81,7 +81,14 @@ class PriceLogger extends Module
         if ($params['type'] == 'after_price') {
             $id_product = (int)$params['product']['id_product'];
             $lastPriceChange = $this->getLastPriceChange($id_product);
-            $lowestPrice = $this->getLowestPriceInLast30Days($id_product);
+
+            $id_product_attribute = null;
+
+            if (isset($params['product']['id_product_attribute'])) {
+                $id_product_attribute = (int)$params['product']['id_product_attribute'];
+            }
+
+            $lowestPrice = $this->getLowestPriceInLast30Days($id_product, $id_product_attribute);
 
             $this->context->smarty->assign(array(
                 'lastPriceChange' => $lastPriceChange,
@@ -104,7 +111,7 @@ class PriceLogger extends Module
         return Db::getInstance()->getRow($sql);
     }
 
-    public function getLowestPriceInLast30Days($id_product)
+    public function getLowestPriceInLast30Days($id_product, $id_product_attribute = null)
     {
         $thirtyDaysAgo = date('Y-m-d H:i:s', strtotime('-30 days'));
 
@@ -112,6 +119,11 @@ class PriceLogger extends Module
         $sql->select('MIN(price) as lowest_price');
         $sql->from('price_log');
         $sql->where('id_product = ' . (int)$id_product);
+
+        if ($id_product_attribute !== null) {
+            $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
+        }
+
         $sql->where('date_upd >= \'' . pSQL($thirtyDaysAgo) . '\'');
 
         $result = Db::getInstance()->getRow($sql);
