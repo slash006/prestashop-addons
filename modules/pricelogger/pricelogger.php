@@ -55,6 +55,8 @@ class PriceLogger extends Module
             $id_product_attribute = $params['product']['id_product_attribute'] ?? null;
 
             $priceLog = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute);
+            $initialPrice = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
+            $this->fillUpDefaultProductData($id_product);
 
             if ($priceLog) {
                 $this->context->smarty->assign([
@@ -70,11 +72,28 @@ class PriceLogger extends Module
 
     }
 
+    public function fillUpDefaultProductData($productId) {
+
+        $product = new Product($productId);
+
+        $combinations = $product->getAttributeCombinations();
+        foreach ($combinations as $combination) {
+            $id_product_attribute = (int)$combination['id_product_attribute'];
+            $combination_price = (float)Product::getPriceStatic($productId, false, $id_product_attribute);
+            $this->updatePriceLog($productId, $id_product_attribute, $combination_price);
+        }
+
+    }
+
     public function hookActionProductUpdate($params)
     {
         $product = $params['product'];
         $id_product = (int)$product->id;
         $new_price = (float)$product->price;
+
+        file_put_contents("product_attribute", print_r($params['product'], true));
+//        $id_product_attribute = $params['product']['id_product_attribute'] ?? null;
+
 
         // Update for the main product
         $this->updatePriceLog($id_product, null, $new_price);
@@ -88,35 +107,35 @@ class PriceLogger extends Module
         }
     }
 
-/*    private function updatePriceLog($id_product, $id_product_attribute, $new_price)
-    {
-        // Retrieve the current entry from price_log
-        $currentEntry = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute);
-        $currentTime = date('Y-m-d H:i:s');
+    /*    private function updatePriceLog($id_product, $id_product_attribute, $new_price)
+        {
+            // Retrieve the current entry from price_log
+            $currentEntry = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute);
+            $currentTime = date('Y-m-d H:i:s');
 
-        if ($currentEntry) {
-            // Update logic for an existing entry
-            if ($new_price < $currentEntry['lowest_price']) {
-                // Update if the new price is lower
-                Db::getInstance()->update('price_log', [
-                    'previous_price' => $currentEntry['lowest_price'],
+            if ($currentEntry) {
+                // Update logic for an existing entry
+                if ($new_price < $currentEntry['lowest_price']) {
+                    // Update if the new price is lower
+                    Db::getInstance()->update('price_log', [
+                        'previous_price' => $currentEntry['lowest_price'],
+                        'lowest_price' => $new_price,
+                        'previous_price_date' => $currentEntry['last_change_date'],
+                        'last_change_date' => $currentTime
+                    ], 'id_product = ' . (int)$id_product . ' AND id_product_attribute = ' . (int)$id_product_attribute);
+                }
+            } else {
+                // Create a new entry if it does not exist
+                Db::getInstance()->insert('price_log', [
+                    'id_product' => $id_product,
+                    'id_product_attribute' => $id_product_attribute,
+                    'previous_price' => $new_price,
                     'lowest_price' => $new_price,
-                    'previous_price_date' => $currentEntry['last_change_date'],
+                    'previous_price_date' => $currentTime,
                     'last_change_date' => $currentTime
-                ], 'id_product = ' . (int)$id_product . ' AND id_product_attribute = ' . (int)$id_product_attribute);
+                ]);
             }
-        } else {
-            // Create a new entry if it does not exist
-            Db::getInstance()->insert('price_log', [
-                'id_product' => $id_product,
-                'id_product_attribute' => $id_product_attribute,
-                'previous_price' => $new_price,
-                'lowest_price' => $new_price,
-                'previous_price_date' => $currentTime,
-                'last_change_date' => $currentTime
-            ]);
-        }
-    }*/
+        }*/
 
     private function updatePriceLog($id_product, $id_product_attribute, $new_price)
     {
@@ -131,14 +150,22 @@ class PriceLogger extends Module
                     'previous_price_date' => $currentEntry['last_change_date'],
                     'last_change_date' => $currentTime
                 ], 'id_product = ' . (int)$id_product . ' AND id_product_attribute = ' . (int)$id_product_attribute);
+            } else if ($new_price > $currentEntry['lowest_price']) {
+                Db::getInstance()->update('price_log', [
+                    'previous_price' => $new_price,
+                    'lowest_price' => $currentEntry['lowest_price'],
+                    'previous_price_date' => $currentEntry['last_change_date'],
+                    'last_change_date' => $currentTime
+                ], 'id_product = ' . (int)$id_product . ' AND id_product_attribute = ' . (int)$id_product_attribute);
+
             }
         } else {
-            $initialPrice = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
+//            $initialPrice = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
 
             Db::getInstance()->insert('price_log', [
                 'id_product' => $id_product,
                 'id_product_attribute' => $id_product_attribute,
-                'previous_price' => $initialPrice,
+                'previous_price' => $new_price,
                 'lowest_price' => $new_price,
                 'previous_price_date' => $currentTime,
                 'last_change_date' => $currentTime
