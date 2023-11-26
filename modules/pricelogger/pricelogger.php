@@ -60,7 +60,7 @@ class PriceLogger extends Module
 
             if ($priceLog) {
                 $this->context->smarty->assign([
-                    'previous_price' => $priceLog['previous_price'],
+                    'previous_price' => $priceLog['previous_price'] ?: $initialPrice,
                     'lowest_price' => $priceLog['lowest_price'],
                     'previous_price_date' => $priceLog['previous_price_date'],
                     'last_change_date' => $priceLog['last_change_date'],
@@ -109,6 +109,7 @@ class PriceLogger extends Module
         $currentEntry = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute);
         $currentTime = date('Y-m-d H:i:s');
 
+        //TODO simplify queries
         if ($currentEntry) {
             if ($new_price < $currentEntry['lowest_price']) {
                 Db::getInstance()->update('price_log', [
@@ -148,6 +149,7 @@ class PriceLogger extends Module
         if ($id_product_attribute !== null) {
             $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
         }
+        $sql->where('DATE_ADD(previous_price_date, INTERVAL 30 DAY) >= last_change_date');
 
         return Db::getInstance()->getRow($sql);
     }
