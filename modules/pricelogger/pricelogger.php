@@ -9,7 +9,7 @@ class PriceLogger extends Module
     {
         $this->name = 'pricelogger';
         $this->tab = 'front_office_features';
-        $this->version = '1.0.0';
+        $this->version = '1.0.1';
         $this->author = 'slash006';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
@@ -52,17 +52,23 @@ class PriceLogger extends Module
         $product = $params['product'];
         $id_product = (int)$product->id;
 
-        // Handle single product price update
-        $this->logPriceChange($id_product, null, (float)$product->price);
+        $id_product_attribute = isset($params['id_product_attribute']) ? (int)$params['id_product_attribute'] : null;
 
-        // Handle product attribute (variation) price updates
-        $combinations = $product->getAttributeCombinations();
-        foreach ($combinations as $combination) {
-            $id_product_attribute = (int)$combination['id_product_attribute'];
+        if ($id_product_attribute) {
             $price = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
             $this->logPriceChange($id_product, $id_product_attribute, $price);
+        } else {
+            $this->logPriceChange($id_product, null, (float)$product->price);
+
+            $combinations = $product->getAttributeCombinations();
+            foreach ($combinations as $combination) {
+                $id_combination = (int)$combination['id_product_attribute'];
+                $price = (float)Product::getPriceStatic($id_product, false, $id_combination);
+                $this->logPriceChange($id_product, $id_combination, $price);
+            }
         }
     }
+
 
     public function hookDisplayProductAdditionalInfo($params)
     {
@@ -88,11 +94,14 @@ class PriceLogger extends Module
                 $id_product_attribute = (int)$params['product']['id_product_attribute'];
             }
 
+            $previousPrice = $this->getPreviousPrice($id_product, $id_product_attribute);
+
             $lowestPrice = $this->getLowestPriceInLast30Days($id_product, $id_product_attribute);
 
             $this->context->smarty->assign(array(
                 'lastPriceChange' => $lastPriceChange,
                 'lowestPrice' => $lowestPrice,
+                'previousPrice' => $previousPrice
             ));
 
             return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
@@ -130,6 +139,30 @@ class PriceLogger extends Module
 
         return $result ? $result['lowest_price'] : null;
     }
+
+    public function getPreviousPrice($id_product, $id_product_attribute = null)
+    {
+        $sql = new DbQuery();
+        $sql->select('price');
+        $sql->from('price_log');
+        $sql->where('id_product = ' . (int)$id_product);
+
+        if ($id_product_attribute !== null) {
+            $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
+        }
+
+        $sql->orderBy('date_upd DESC');
+        $sql->limit(2);
+
+        $results = Db::getInstance()->executeS($sql);
+
+        if (count($results) > 1) {
+            return $results[1]['price'];
+        }
+
+        return null;
+    }
+
 
     private function logPriceChange($id_product, $id_product_attribute, $price)
     {
