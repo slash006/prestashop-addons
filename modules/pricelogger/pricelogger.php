@@ -27,15 +27,16 @@ class PriceLogger extends Module
     {
         return parent::install() &&
             $this->registerHook('actionProductUpdate') &&
-            $this->registerHook('displayProductAdditionalInfo') &&
             $this->registerHook('displayProductPriceBlock') &&
             Db::getInstance()->execute('
                 CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'price_log` (
                     `id_price_log` INT UNSIGNED NOT NULL AUTO_INCREMENT,
                     `id_product` INT UNSIGNED NOT NULL,
                     `id_product_attribute` INT UNSIGNED DEFAULT NULL,
-                    `price` DECIMAL(20,6) NOT NULL,
-                    `date_upd` DATETIME NOT NULL,
+                    `previous_price` DECIMAL(20,6) NOT NULL,
+                    `lowest_price` DECIMAL(20,6) NOT NULL,
+                    `previous_price_date` DATETIME NOT NULL,
+                    `last_change_date` DATETIME NOT NULL,
                     PRIMARY KEY (`id_price_log`)
                 ) ENGINE='._MYSQL_ENGINE_.' DEFAULT CHARSET=utf8;'
             );
@@ -47,130 +48,115 @@ class PriceLogger extends Module
             parent::uninstall();
     }
 
-    public function hookActionProductUpdate($params)
-    {
-        $product = $params['product'];
-        $id_product = (int)$product->id;
-
-        $id_product_attribute = isset($params['id_product_attribute']) ? (int)$params['id_product_attribute'] : null;
-
-        if ($id_product_attribute) {
-            $price = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
-            $this->logPriceChange($id_product, $id_product_attribute, $price);
-        } else {
-            $this->logPriceChange($id_product, null, (float)$product->price);
-
-            $combinations = $product->getAttributeCombinations();
-            foreach ($combinations as $combination) {
-                $id_combination = (int)$combination['id_product_attribute'];
-                $price = (float)Product::getPriceStatic($id_product, false, $id_combination);
-                $this->logPriceChange($id_product, $id_combination, $price);
-            }
-        }
-    }
-
-
-    public function hookDisplayProductAdditionalInfo($params)
-    {
-        $id_product = (int)$params['product']['id_product'];
-        $lastPriceChange = $this->getLastPriceChange($id_product);
-
-        $this->context->smarty->assign(array(
-            'lastPriceChange' => $lastPriceChange,
-        ));
-
-        return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
-    }
-
     public function hookDisplayProductPriceBlock($params)
     {
         if ($params['type'] == 'after_price') {
             $id_product = (int)$params['product']['id_product'];
-            $lastPriceChange = $this->getLastPriceChange($id_product);
+            $id_product_attribute = $params['product']['id_product_attribute'] ?? null;
 
-            $id_product_attribute = null;
+            $priceLog = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute);
 
-            if (isset($params['product']['id_product_attribute'])) {
-                $id_product_attribute = (int)$params['product']['id_product_attribute'];
+            if ($priceLog) {
+                $this->context->smarty->assign([
+                    'previous_price' => $priceLog['previous_price'],
+                    'lowest_price' => $priceLog['lowest_price'],
+                    'previous_price_date' => $priceLog['previous_price_date'],
+                    'last_change_date' => $priceLog['last_change_date'],
+                ]);
             }
 
-            $previousPrice = $this->getPreviousPrice($id_product, $id_product_attribute);
+            return $this->display(__FILE__, 'views/templates/hook/displayPrice.tpl');
+        }
 
-            $lowestPrice = $this->getLowestPriceInLast30Days($id_product, $id_product_attribute);
+    }
 
-            $this->context->smarty->assign(array(
-                'lastPriceChange' => $lastPriceChange,
-                'lowestPrice' => $lowestPrice,
-                'previousPrice' => $previousPrice
-            ));
+    public function hookActionProductUpdate($params)
+    {
+        $product = $params['product'];
+        $id_product = (int)$product->id;
+        $new_price = (float)$product->price;
 
-            return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
+        // Update for the main product
+        $this->updatePriceLog($id_product, null, $new_price);
+
+        // Update for product combinations
+        $combinations = $product->getAttributeCombinations();
+        foreach ($combinations as $combination) {
+            $id_product_attribute = (int)$combination['id_product_attribute'];
+            $combination_price = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
+            $this->updatePriceLog($id_product, $id_product_attribute, $combination_price);
         }
     }
 
-    private function getLastPriceChange($id_product)
+/*    private function updatePriceLog($id_product, $id_product_attribute, $new_price)
+    {
+        // Retrieve the current entry from price_log
+        $currentEntry = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute);
+        $currentTime = date('Y-m-d H:i:s');
+
+        if ($currentEntry) {
+            // Update logic for an existing entry
+            if ($new_price < $currentEntry['lowest_price']) {
+                // Update if the new price is lower
+                Db::getInstance()->update('price_log', [
+                    'previous_price' => $currentEntry['lowest_price'],
+                    'lowest_price' => $new_price,
+                    'previous_price_date' => $currentEntry['last_change_date'],
+                    'last_change_date' => $currentTime
+                ], 'id_product = ' . (int)$id_product . ' AND id_product_attribute = ' . (int)$id_product_attribute);
+            }
+        } else {
+            // Create a new entry if it does not exist
+            Db::getInstance()->insert('price_log', [
+                'id_product' => $id_product,
+                'id_product_attribute' => $id_product_attribute,
+                'previous_price' => $new_price,
+                'lowest_price' => $new_price,
+                'previous_price_date' => $currentTime,
+                'last_change_date' => $currentTime
+            ]);
+        }
+    }*/
+
+    private function updatePriceLog($id_product, $id_product_attribute, $new_price)
+    {
+        $currentEntry = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute);
+        $currentTime = date('Y-m-d H:i:s');
+
+        if ($currentEntry) {
+            if ($new_price < $currentEntry['lowest_price']) {
+                Db::getInstance()->update('price_log', [
+                    'previous_price' => $currentEntry['lowest_price'],
+                    'lowest_price' => $new_price,
+                    'previous_price_date' => $currentEntry['last_change_date'],
+                    'last_change_date' => $currentTime
+                ], 'id_product = ' . (int)$id_product . ' AND id_product_attribute = ' . (int)$id_product_attribute);
+            }
+        } else {
+            $initialPrice = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
+
+            Db::getInstance()->insert('price_log', [
+                'id_product' => $id_product,
+                'id_product_attribute' => $id_product_attribute,
+                'previous_price' => $initialPrice,
+                'lowest_price' => $new_price,
+                'previous_price_date' => $currentTime,
+                'last_change_date' => $currentTime
+            ]);
+        }
+    }
+
+
+    private function getCurrentPriceLogEntry($id_product, $id_product_attribute)
     {
         $sql = new DbQuery();
         $sql->select('*');
         $sql->from('price_log');
         $sql->where('id_product = ' . (int)$id_product);
-        $sql->orderBy('date_upd DESC');
-//        $sql->limit(1);
+        if ($id_product_attribute !== null) {
+            $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
+        }
 
         return Db::getInstance()->getRow($sql);
-    }
-
-    public function getLowestPriceInLast30Days($id_product, $id_product_attribute = null)
-    {
-        $thirtyDaysAgo = date('Y-m-d H:i:s', strtotime('-30 days'));
-
-        $sql = new DbQuery();
-        $sql->select('MIN(price) as lowest_price');
-        $sql->from('price_log');
-        $sql->where('id_product = ' . (int)$id_product);
-
-        if ($id_product_attribute !== null) {
-            $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
-        }
-
-        $sql->where('date_upd >= \'' . pSQL($thirtyDaysAgo) . '\'');
-
-        $result = Db::getInstance()->getRow($sql);
-
-        return $result ? $result['lowest_price'] : null;
-    }
-
-    public function getPreviousPrice($id_product, $id_product_attribute = null)
-    {
-        $sql = new DbQuery();
-        $sql->select('price');
-        $sql->from('price_log');
-        $sql->where('id_product = ' . (int)$id_product);
-
-        if ($id_product_attribute !== null) {
-            $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
-        }
-
-        $sql->orderBy('date_upd DESC');
-        $sql->limit(2);
-
-        $results = Db::getInstance()->executeS($sql);
-
-        if (count($results) > 1) {
-            return $results[1]['price'];
-        }
-
-        return null;
-    }
-
-
-    private function logPriceChange($id_product, $id_product_attribute, $price)
-    {
-        Db::getInstance()->insert('price_log', array(
-            'id_product' => $id_product,
-            'id_product_attribute' => $id_product_attribute,
-            'price' => $price,
-            'date_upd' => date('Y-m-d H:i:s'),
-        ));
     }
 }
