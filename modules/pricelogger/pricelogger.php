@@ -55,6 +55,8 @@ class PriceLogger extends Module
             $id_product_attribute = $params['product']['id_product_attribute'] ?? null;
 
             $priceLog = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute, true);
+
+            //TODO: $initialPrice nullable?
             $initialPrice = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
             $this->fillUpDefaultProductData($id_product);
 
