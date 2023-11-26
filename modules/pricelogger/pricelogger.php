@@ -54,7 +54,7 @@ class PriceLogger extends Module
             $id_product = (int)$params['product']['id_product'];
             $id_product_attribute = $params['product']['id_product_attribute'] ?? null;
 
-            $priceLog = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute);
+            $priceLog = $this->getCurrentPriceLogEntry($id_product, $id_product_attribute, true);
             $initialPrice = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
             $this->fillUpDefaultProductData($id_product);
 
@@ -140,16 +140,16 @@ class PriceLogger extends Module
     }
 
 
-    private function getCurrentPriceLogEntry($id_product, $id_product_attribute)
+    private function getCurrentPriceLogEntry($id_product, $id_product_attribute, $limitDate = false)
     {
         $sql = new DbQuery();
         $sql->select('*');
         $sql->from('price_log');
         $sql->where('id_product = ' . (int)$id_product);
-        if ($id_product_attribute !== null) {
+        if ($id_product_attribute !== null)
             $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
-        }
-        $sql->where('DATE_ADD(previous_price_date, INTERVAL 30 DAY) >= last_change_date');
+        if($limitDate)
+            $sql->where('DATE_ADD(previous_price_date, INTERVAL 30 DAY) >= last_change_date');
 
         return Db::getInstance()->getRow($sql);
     }
