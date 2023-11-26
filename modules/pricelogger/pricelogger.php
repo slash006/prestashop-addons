@@ -152,7 +152,7 @@ class PriceLogger extends Module
                 ], 'id_product = ' . (int)$id_product . ' AND id_product_attribute = ' . (int)$id_product_attribute);
             } else if ($new_price > $currentEntry['lowest_price']) {
                 Db::getInstance()->update('price_log', [
-                    'previous_price' => $new_price,
+                    'previous_price' => $currentEntry['lowest_price'],
                     'lowest_price' => $currentEntry['lowest_price'],
                     'previous_price_date' => $currentEntry['last_change_date'],
                     'last_change_date' => $currentTime
