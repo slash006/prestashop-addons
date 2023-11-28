@@ -12,7 +12,7 @@ class PriceLogger extends Module
     {
         $this->name = 'pricelogger';
         $this->tab = 'front_office_features';
-        $this->version = '1.0.7';
+        $this->version = '1.0.8';
         $this->author = 'slash006';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
@@ -68,6 +68,8 @@ class PriceLogger extends Module
 
     protected function installTriggers()
     {
+        $this->uninstallTriggers();
+
         $tableName = _DB_PREFIX_ . self::TABLE_NAME;
 
         $sql = [
@@ -126,6 +128,25 @@ class PriceLogger extends Module
                     END;
             END IF;
         END"
+        ];
+
+        foreach ($sql as $query) {
+            if (!Db::getInstance()->execute($query)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function uninstallTriggers()
+    {
+        $sql = [
+            // Remove trigger for ps_product
+            "DROP TRIGGER IF EXISTS after_product_update",
+
+            // Remove trigger for ps_product_attribute
+            "DROP TRIGGER IF EXISTS after_product_attribute_update"
         ];
 
         foreach ($sql as $query) {
