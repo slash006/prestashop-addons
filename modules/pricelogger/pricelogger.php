@@ -12,7 +12,7 @@ class PriceLogger extends Module
     {
         $this->name = 'pricelogger';
         $this->tab = 'front_office_features';
-        $this->version = '1.0.8';
+        $this->version = '1.0.11';
         $this->author = 'slash006';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
@@ -61,6 +61,8 @@ class PriceLogger extends Module
 
     protected function uninstallDb()
     {
+
+        $this->uninstallTriggers();
         $tableName = _DB_PREFIX_ . self::TABLE_NAME;
         $sql = "DROP TABLE IF EXISTS $tableName;";
         return Db::getInstance()->execute($sql);
@@ -83,19 +85,23 @@ class PriceLogger extends Module
                 VALUES (NEW.id_product, 0, OLD.price, NEW.price, NULL, NOW())
                 ON DUPLICATE KEY UPDATE
                     previous_lowest_price = CASE
-                        WHEN NEW.price < current_price THEN current_price
+                        WHEN NEW.price < current_price 
+                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN current_price
                         ELSE previous_lowest_price
                     END,
                     previous_price_timestamp = CASE
-                        WHEN NEW.price < current_price THEN current_price_timestamp
+                        WHEN NEW.price < current_price 
+                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN current_price_timestamp
                         ELSE previous_price_timestamp
                     END,
                     current_price_timestamp = CASE
-                        WHEN NEW.price < current_price THEN NOW()
+                        WHEN NEW.price < current_price 
+                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
                         ELSE current_price_timestamp
                     END,
                     current_price = CASE
-                        WHEN NEW.price < current_price THEN NEW.price
+                        WHEN NEW.price < current_price 
+                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
                         ELSE current_price
                     END;
             END IF;
@@ -111,19 +117,23 @@ class PriceLogger extends Module
                 VALUES (NEW.id_product, NEW.id_product_attribute, OLD.price, NEW.price, NULL, NOW())
                 ON DUPLICATE KEY UPDATE
                     previous_lowest_price = CASE
-                        WHEN NEW.price < current_price THEN current_price
+                        WHEN NEW.price < current_price 
+                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN current_price
                         ELSE previous_lowest_price
                     END,
                     previous_price_timestamp = CASE
-                        WHEN NEW.price < current_price THEN current_price_timestamp
+                        WHEN NEW.price < current_price 
+                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN current_price_timestamp
                         ELSE previous_price_timestamp
                     END,
                     current_price_timestamp = CASE
-                        WHEN NEW.price < current_price THEN NOW()
+                        WHEN NEW.price < current_price 
+                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
                         ELSE current_price_timestamp
                     END,
                     current_price = CASE
-                        WHEN NEW.price < current_price THEN NEW.price
+                        WHEN NEW.price < current_price 
+                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
                         ELSE current_price
                     END;
             END IF;
