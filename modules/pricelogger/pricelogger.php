@@ -12,7 +12,7 @@ class PriceLogger extends Module
     {
         $this->name = 'pricelogger';
         $this->tab = 'front_office_features';
-        $this->version = '1.0.11';
+        $this->version = '1.0.12';
         $this->author = 'slash006';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
@@ -80,28 +80,36 @@ class PriceLogger extends Module
         AFTER UPDATE ON " . _DB_PREFIX_ . "product
         FOR EACH ROW
         BEGIN
+            DECLARE original_current_price_timestamp TIMESTAMP;
+
+            SELECT current_price_timestamp INTO original_current_price_timestamp
+            FROM {$tableName}
+            WHERE id_product = NEW.id_product
+            ORDER BY current_price_timestamp DESC
+            LIMIT 1;
+
             IF NEW.price <> OLD.price THEN
-                INSERT INTO $tableName (id_product, id_product_attribute, previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp)
+                INSERT INTO {$tableName} (id_product, id_product_attribute, previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp)
                 VALUES (NEW.id_product, 0, OLD.price, NEW.price, NULL, NOW())
                 ON DUPLICATE KEY UPDATE
                     previous_lowest_price = CASE
-                        WHEN NEW.price < current_price 
-                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN current_price
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
+                        WHEN NEW.price < current_price THEN current_price
                         ELSE previous_lowest_price
                     END,
                     previous_price_timestamp = CASE
-                        WHEN NEW.price < current_price 
-                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN current_price_timestamp
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
+                        WHEN NEW.price < current_price THEN current_price_timestamp
                         ELSE previous_price_timestamp
                     END,
                     current_price_timestamp = CASE
-                        WHEN NEW.price < current_price 
-                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
-                        ELSE current_price_timestamp
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
+                        WHEN NEW.price < current_price THEN NOW()
+                        ELSE original_current_price_timestamp
                     END,
                     current_price = CASE
-                        WHEN NEW.price < current_price 
-                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
+                        WHEN NEW.price < current_price THEN NEW.price
                         ELSE current_price
                     END;
             END IF;
@@ -112,28 +120,36 @@ class PriceLogger extends Module
         AFTER UPDATE ON " . _DB_PREFIX_ . "product_attribute
         FOR EACH ROW
         BEGIN
+            DECLARE original_current_price_timestamp TIMESTAMP;
+
+            SELECT current_price_timestamp INTO original_current_price_timestamp
+            FROM {$tableName}
+            WHERE id_product = NEW.id_product AND id_product_attribute = NEW.id_product_attribute
+            ORDER BY current_price_timestamp DESC
+            LIMIT 1;
+
             IF NEW.price <> OLD.price THEN
-                INSERT INTO $tableName (id_product, id_product_attribute, previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp)
+                INSERT INTO {$tableName} (id_product, id_product_attribute, previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp)
                 VALUES (NEW.id_product, NEW.id_product_attribute, OLD.price, NEW.price, NULL, NOW())
                 ON DUPLICATE KEY UPDATE
                     previous_lowest_price = CASE
-                        WHEN NEW.price < current_price 
-                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN current_price
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
+                        WHEN NEW.price < current_price THEN current_price
                         ELSE previous_lowest_price
                     END,
                     previous_price_timestamp = CASE
-                        WHEN NEW.price < current_price 
-                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN current_price_timestamp
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
+                        WHEN NEW.price < current_price THEN current_price_timestamp
                         ELSE previous_price_timestamp
                     END,
                     current_price_timestamp = CASE
-                        WHEN NEW.price < current_price 
-                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
-                        ELSE current_price_timestamp
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
+                        WHEN NEW.price < current_price THEN NOW()
+                        ELSE original_current_price_timestamp
                     END,
                     current_price = CASE
-                        WHEN NEW.price < current_price 
-                             OR current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
+                        WHEN NEW.price < current_price THEN NEW.price
                         ELSE current_price
                     END;
             END IF;
