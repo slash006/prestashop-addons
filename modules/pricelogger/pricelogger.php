@@ -243,8 +243,6 @@ class PriceLogger extends Module
 
         if ($params['type'] == 'after_price') {
             $id_product = (int)$params['product']['id_product'];
-//            $lastPriceChange = $this->getLastPriceChange($id_product);
-
             $id_product_attribute = null;
 
             if (isset($params['product']['id_product_attribute'])) {
@@ -252,9 +250,8 @@ class PriceLogger extends Module
             }
 
             $lowestPrice = $this->getPreviousLowestProductPrice($id_product, $id_product_attribute);
-
             $this->context->smarty->assign(array(
-                'lowestPrice' => $lowestPrice ? $lowestPrice : null,
+                'lowestPrice' => $lowestPrice ?: null,
             ));
 
             return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
