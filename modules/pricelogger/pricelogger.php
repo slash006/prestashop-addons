@@ -12,7 +12,7 @@ class PriceLogger extends Module
     {
         $this->name = 'pricelogger';
         $this->tab = 'front_office_features';
-        $this->version = '1.0.12';
+        $this->version = '1.0.14';
         $this->author = 'slash006';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
@@ -93,14 +93,12 @@ class PriceLogger extends Module
                 VALUES (NEW.id_product, 0, OLD.price, NEW.price, NULL, NOW())
                 ON DUPLICATE KEY UPDATE
                     previous_lowest_price = CASE
-                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
-                        WHEN NEW.price < current_price THEN current_price
-                        ELSE previous_lowest_price
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN OLD.price
+                        ELSE current_price
                     END,
                     previous_price_timestamp = CASE
-                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
-                        WHEN NEW.price < current_price THEN current_price_timestamp
-                        ELSE previous_price_timestamp
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN previous_price_timestamp
+                        ELSE current_price_timestamp
                     END,
                     current_price_timestamp = CASE
                         WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
@@ -133,14 +131,12 @@ class PriceLogger extends Module
                 VALUES (NEW.id_product, NEW.id_product_attribute, OLD.price, NEW.price, NULL, NOW())
                 ON DUPLICATE KEY UPDATE
                     previous_lowest_price = CASE
-                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
-                        WHEN NEW.price < current_price THEN current_price
-                        ELSE previous_lowest_price
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN OLD.price
+                        ELSE current_price
                     END,
                     previous_price_timestamp = CASE
-                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
-                        WHEN NEW.price < current_price THEN current_price_timestamp
-                        ELSE previous_price_timestamp
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN previous_price_timestamp
+                        ELSE current_price_timestamp
                     END,
                     current_price_timestamp = CASE
                         WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
@@ -185,23 +181,62 @@ class PriceLogger extends Module
     }
 
 
-    public function hookActionProductUpdate($params)
-    {
+    public function getBaseProductPrice($id_product) {
 
+        $tableName = self::TABLE_NAME;
+
+        $sql = new DbQuery();
+        $sql->select('previous_lowest_price');
+        $sql->from($tableName);
+        $sql->where('id_product = ' . (int)$id_product);
+        $sql->where('id_product_attribute = 0');
+
+        return Db::getInstance()->getValue($sql);
     }
 
 
+    public function getPreviousLowestProductPrice($id_product, $id_product_attribute) {
+
+        $tableName = self::TABLE_NAME;
+
+        $basePrice = $this->getBaseProductPrice($id_product);
+
+        if($id_product_attribute === 0)
+            return $basePrice;
+
+        $sql = new DbQuery();
+        $sql->select('previous_lowest_price');
+        $sql->from($tableName);
+        $sql->where('id_product = ' . (int)$id_product);
+        $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
+
+        $attributePriceChange = Db::getInstance()->getValue($sql);
+
+        return $basePrice + $attributePriceChange;
+    }
+
     public function hookDisplayProductPriceBlock($params)
     {
+
         if ($params['type'] == 'after_price') {
+            $id_product = (int)$params['product']['id_product'];
+//            $lastPriceChange = $this->getLastPriceChange($id_product);
+
+            $id_product_attribute = null;
+
+            if (isset($params['product']['id_product_attribute'])) {
+                $id_product_attribute = (int)$params['product']['id_product_attribute'];
+            }
+
+            $lowestPrice = $this->getPreviousLowestProductPrice($id_product, $id_product_attribute);
 
             $this->context->smarty->assign(array(
-                'lastPriceChange' => null,
-                'lowestPrice' => null,
+                'lowestPrice' => $lowestPrice ? $lowestPrice : null,
             ));
 
-            return $this->display(__FILE__, 'views/templates/hook/displayPrice.tpl');
+            return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
         }
+
     }
 
 
