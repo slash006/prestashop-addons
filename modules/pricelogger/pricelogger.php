@@ -190,6 +190,15 @@ class PriceLogger extends Module
         $sql->from($tableName);
         $sql->where('id_product = ' . (int)$id_product);
         $sql->where('id_product_attribute = 0');
+        $sql->where('DATEDIFF(current_price_timestamp, previous_price_timestamp) <= 30');
+
+        $result = Db::getInstance()->getValue($sql);
+
+        if ($result === false) {
+            $product = new Product($id_product);
+            return $product->price;
+        }
+
 
         return Db::getInstance()->getValue($sql);
     }
@@ -209,8 +218,10 @@ class PriceLogger extends Module
         $sql->from($tableName);
         $sql->where('id_product = ' . (int)$id_product);
         $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
+        $sql->where('DATEDIFF(current_price_timestamp, previous_price_timestamp) <= 30');
 
         $attributePriceChange = Db::getInstance()->getValue($sql);
+
 
         return $basePrice + $attributePriceChange;
     }
