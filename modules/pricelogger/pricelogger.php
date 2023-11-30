@@ -90,7 +90,7 @@ class PriceLogger extends Module
 
             IF NEW.price <> OLD.price THEN
                 INSERT INTO {$tableName} (id_product, id_product_attribute, previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp)
-                VALUES (NEW.id_product, 0, OLD.price, NEW.price, NULL, NOW())
+                VALUES (NEW.id_product, 0, OLD.price, NEW.price, NOW(), NOW())
                 ON DUPLICATE KEY UPDATE
                     previous_lowest_price = CASE
                         WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN OLD.price
@@ -128,7 +128,7 @@ class PriceLogger extends Module
 
             IF NEW.price <> OLD.price THEN
                 INSERT INTO {$tableName} (id_product, id_product_attribute, previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp)
-                VALUES (NEW.id_product, NEW.id_product_attribute, OLD.price, NEW.price, NULL, NOW())
+                VALUES (NEW.id_product, NEW.id_product_attribute, OLD.price, NEW.price, NOW(), NOW())
                 ON DUPLICATE KEY UPDATE
                     previous_lowest_price = CASE
                         WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN OLD.price
@@ -186,18 +186,30 @@ class PriceLogger extends Module
         $tableName = self::TABLE_NAME;
 
         $sql = new DbQuery();
-        $sql->select('previous_lowest_price');
+        $sql->select('previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp');
         $sql->from($tableName);
         $sql->where('id_product = ' . (int)$id_product);
         $sql->where('id_product_attribute = 0');
-        $sql->where('DATEDIFF(current_price_timestamp, previous_price_timestamp) <= 30');
+//        $sql->where('DATEDIFF(current_price_timestamp, previous_price_timestamp) <= 30');
+        $result = Db::getInstance()->getRow($sql);
 
-        $result = Db::getInstance()->getValue($sql);
-
-        if ($result === false) {
-            $product = new Product($id_product);
-            return $product->price;
+        $previousTimestamp = strtotime($result['previous_price_timestamp']);
+        $currentTimestamp = strtotime($result['current_price_timestamp']);
+        $diffDays = ($currentTimestamp - $previousTimestamp) / (60 * 60 * 24);
+        if ($diffDays > 30) {
+            return $result['previous_lowest_price'];
         }
+
+        else {
+
+            return $result['current_price'];
+
+        }
+
+        /*        if ($result === false) {
+                    $product = new Product($id_product);
+                    return $product->price;
+                }*/
 
 
         return Db::getInstance()->getValue($sql);
