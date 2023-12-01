@@ -119,26 +119,12 @@ class PriceLogger extends Module
         FOR EACH ROW
         BEGIN
             DECLARE original_current_price_timestamp TIMESTAMP;
-            DECLARE base_product_price DECIMAL(20,6);
             
             DECLARE new_price DECIMAL(20, 6);
             DECLARE old_price DECIMAL(20, 6);
-            
-            SELECT current_price INTO base_product_price
-            FROM {$tableName}
-            WHERE id_product = NEW.id_product
-            LIMIT 1;
-            
-            IF base_product_price IS NULL THEN
-            SELECT price INTO base_product_price
-            FROM ps_product
-            WHERE id_product = NEW.id_product
-            LIMIT 1;
-            END IF;
-            
-            
-            SET new_price = NEW.price + base_product_price;
-            SET old_price = OLD.price + base_product_price;
+
+            SET new_price = NEW.price;
+            SET old_price = OLD.price;
 
             SELECT current_price_timestamp INTO original_current_price_timestamp
             FROM {$tableName}
@@ -202,7 +188,6 @@ class PriceLogger extends Module
 
 
     public function getBaseProductPrice($id_product) {
-
         $tableName = self::TABLE_NAME;
 
         $sql = new DbQuery();
@@ -212,9 +197,14 @@ class PriceLogger extends Module
         $sql->where('id_product_attribute = 0');
         $result = Db::getInstance()->getRow($sql);
 
-        return $result['previous_lowest_price'];
+        if ($result === false || $result['previous_lowest_price'] === null) {
+            $product = new Product($id_product);
+            return $product->price;
+        }
 
+        return $result['previous_lowest_price'];
     }
+
 
 
     public function getPreviousLowestProductPrice($id_product, $id_product_attribute) {
@@ -234,7 +224,7 @@ class PriceLogger extends Module
         $attributePriceChange = Db::getInstance()->getValue($sql);
 
 
-        return $attributePriceChange;
+        return $basePrice + $attributePriceChange;
     }
 
     public function hookDisplayProductPriceBlock($params)
