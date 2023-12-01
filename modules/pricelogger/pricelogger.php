@@ -190,29 +190,10 @@ class PriceLogger extends Module
         $sql->from($tableName);
         $sql->where('id_product = ' . (int)$id_product);
         $sql->where('id_product_attribute = 0');
-//        $sql->where('DATEDIFF(current_price_timestamp, previous_price_timestamp) <= 30');
         $result = Db::getInstance()->getRow($sql);
 
-        $previousTimestamp = strtotime($result['previous_price_timestamp']);
-        $currentTimestamp = strtotime($result['current_price_timestamp']);
-        $diffDays = ($currentTimestamp - $previousTimestamp) / (60 * 60 * 24);
-        if ($diffDays > 30) {
-            return $result['previous_lowest_price'];
-        }
+        return $result['previous_lowest_price'];
 
-        else {
-
-            return $result['current_price'];
-
-        }
-
-        /*        if ($result === false) {
-                    $product = new Product($id_product);
-                    return $product->price;
-                }*/
-
-
-        return Db::getInstance()->getValue($sql);
     }
 
 
@@ -230,8 +211,6 @@ class PriceLogger extends Module
         $sql->from($tableName);
         $sql->where('id_product = ' . (int)$id_product);
         $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
-        $sql->where('DATEDIFF(current_price_timestamp, previous_price_timestamp) <= 30');
-
         $attributePriceChange = Db::getInstance()->getValue($sql);
 
 
@@ -251,7 +230,7 @@ class PriceLogger extends Module
 
             $lowestPrice = $this->getPreviousLowestProductPrice($id_product, $id_product_attribute);
             $this->context->smarty->assign(array(
-                'lowestPrice' => $lowestPrice ?: null,
+                'lowestPrice' => $lowestPrice ? $lowestPrice : null,
             ));
 
             return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
