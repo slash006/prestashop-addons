@@ -5,11 +5,14 @@ if (!defined('_PS_VERSION_')) {
 
 class PriceLogger extends Module
 {
+
+    const TABLE_NAME = 'price_log';
+
     public function __construct()
     {
         $this->name = 'pricelogger';
         $this->tab = 'front_office_features';
-        $this->version = '1.0.0';
+        $this->version = '1.0.1';
         $this->author = 'slash006';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
@@ -25,119 +28,235 @@ class PriceLogger extends Module
 
     public function install()
     {
+        // Register hooks and install module, database and triggers
         return parent::install() &&
             $this->registerHook('actionProductUpdate') &&
             $this->registerHook('displayProductAdditionalInfo') &&
             $this->registerHook('displayProductPriceBlock') &&
-            Db::getInstance()->execute('
-                CREATE TABLE IF NOT EXISTS `'._DB_PREFIX_.'price_log` (
-                    `id_price_log` INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                    `id_product` INT UNSIGNED NOT NULL,
-                    `id_product_attribute` INT UNSIGNED DEFAULT NULL,
-                    `price` DECIMAL(20,6) NOT NULL,
-                    `date_upd` DATETIME NOT NULL,
-                    PRIMARY KEY (`id_price_log`)
-                ) ENGINE='._MYSQL_ENGINE_.' DEFAULT CHARSET=utf8;'
-            );
+            $this->installDb() &&
+            $this->installTriggers();
     }
 
     public function uninstall()
     {
-        return Db::getInstance()->execute('DROP TABLE `'._DB_PREFIX_.'price_log`') &&
+        return $this->uninstallDb() &&
             parent::uninstall();
     }
 
-    public function hookActionProductUpdate($params)
+    protected function installDb()
     {
-        $product = $params['product'];
-        $id_product = (int)$product->id;
+        $tableName = _DB_PREFIX_ . self::TABLE_NAME;
+        $sql = "CREATE TABLE IF NOT EXISTS $tableName (
+                    id_product INT NOT NULL,
+                    id_product_attribute INT NOT NULL DEFAULT 0,
+                    previous_lowest_price DECIMAL(20,6),
+                    current_price DECIMAL(20,6),
+                    previous_price_timestamp DATETIME,
+                    current_price_timestamp DATETIME,
+                    PRIMARY KEY (id_product, id_product_attribute)
+                );";
 
-        // Handle single product price update
-        $this->logPriceChange($id_product, null, (float)$product->price);
-
-        // Handle product attribute (variation) price updates
-        $combinations = $product->getAttributeCombinations();
-        foreach ($combinations as $combination) {
-            $id_product_attribute = (int)$combination['id_product_attribute'];
-            $price = (float)Product::getPriceStatic($id_product, false, $id_product_attribute);
-            $this->logPriceChange($id_product, $id_product_attribute, $price);
-        }
+        return Db::getInstance()->execute($sql);
     }
 
-    public function hookDisplayProductAdditionalInfo($params)
+    protected function uninstallDb()
     {
-        $id_product = (int)$params['product']['id_product'];
-        $lastPriceChange = $this->getLastPriceChange($id_product);
 
-        $this->context->smarty->assign(array(
-            'lastPriceChange' => $lastPriceChange,
-        ));
+        $this->uninstallTriggers();
+        $tableName = _DB_PREFIX_ . self::TABLE_NAME;
+        $sql = "DROP TABLE IF EXISTS $tableName;";
+        return Db::getInstance()->execute($sql);
+    }
 
-        return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
+    protected function installTriggers()
+    {
+        $this->uninstallTriggers();
+
+        $tableName = _DB_PREFIX_ . self::TABLE_NAME;
+
+        $sql = [
+            // Trigger for ps_product
+            "CREATE TRIGGER after_product_update
+        AFTER UPDATE ON " . _DB_PREFIX_ . "product
+        FOR EACH ROW
+        BEGIN
+            DECLARE original_current_price_timestamp TIMESTAMP;
+
+            SELECT current_price_timestamp INTO original_current_price_timestamp
+            FROM {$tableName}
+            WHERE id_product = NEW.id_product
+            ORDER BY current_price_timestamp DESC
+            LIMIT 1;
+
+            IF NEW.price <> OLD.price THEN
+                INSERT INTO {$tableName} (id_product, id_product_attribute, previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp)
+                VALUES (NEW.id_product, 0, OLD.price, NEW.price, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE
+                    previous_lowest_price = CASE
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN OLD.price
+                        ELSE current_price
+                    END,
+                    previous_price_timestamp = CASE
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN previous_price_timestamp
+                        ELSE current_price_timestamp
+                    END,
+                    current_price_timestamp = CASE
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
+                        WHEN NEW.price < current_price THEN NOW()
+                        ELSE original_current_price_timestamp
+                    END,
+                    current_price = CASE
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NEW.price
+                        WHEN NEW.price < current_price THEN NEW.price
+                        ELSE current_price
+                    END;
+            END IF;
+        END",
+
+            // Trigger for ps_product_attribute
+            "CREATE TRIGGER after_product_attribute_update
+        AFTER UPDATE ON " . _DB_PREFIX_ . "product_attribute
+        FOR EACH ROW
+        BEGIN
+            DECLARE original_current_price_timestamp TIMESTAMP;
+            DECLARE base_product_price DECIMAL(20,6);
+            
+            DECLARE new_price DECIMAL(20, 6);
+            DECLARE old_price DECIMAL(20, 6);
+            
+            SELECT current_price INTO base_product_price
+            FROM {$tableName}
+            WHERE id_product = NEW.id_product
+            LIMIT 1;
+            
+            IF base_product_price IS NULL THEN
+            SELECT price INTO base_product_price
+            FROM ps_product
+            WHERE id_product = NEW.id_product
+            LIMIT 1;
+            END IF;
+            
+            
+            SET new_price = NEW.price + base_product_price;
+            SET old_price = OLD.price + base_product_price;
+
+            SELECT current_price_timestamp INTO original_current_price_timestamp
+            FROM {$tableName}
+            WHERE id_product = NEW.id_product AND id_product_attribute = NEW.id_product_attribute
+            ORDER BY current_price_timestamp DESC
+            LIMIT 1;
+
+            IF NEW.price <> OLD.price THEN
+                INSERT INTO {$tableName} (id_product, id_product_attribute, previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp)
+                VALUES (NEW.id_product, NEW.id_product_attribute, old_price, new_price, NOW(), NOW())
+                ON DUPLICATE KEY UPDATE
+                    previous_lowest_price = CASE
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN old_price
+                        ELSE current_price
+                    END,
+                    previous_price_timestamp = CASE
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN previous_price_timestamp
+                        ELSE current_price_timestamp
+                    END,
+                    current_price_timestamp = CASE
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN NOW()
+                        WHEN new_price < current_price THEN NOW()
+                        ELSE original_current_price_timestamp
+                    END,
+                    current_price = CASE
+                        WHEN original_current_price_timestamp < NOW() - INTERVAL 30 DAY THEN new_price
+                        WHEN new_price < current_price THEN new_price
+                        ELSE current_price
+                    END;
+            END IF;
+        END"
+        ];
+
+        foreach ($sql as $query) {
+            if (!Db::getInstance()->execute($query)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function uninstallTriggers()
+    {
+        $sql = [
+            // Remove trigger for ps_product
+            "DROP TRIGGER IF EXISTS after_product_update",
+
+            // Remove trigger for ps_product_attribute
+            "DROP TRIGGER IF EXISTS after_product_attribute_update"
+        ];
+
+        foreach ($sql as $query) {
+            if (!Db::getInstance()->execute($query)) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+
+    public function getBaseProductPrice($id_product) {
+
+        $tableName = self::TABLE_NAME;
+
+        $sql = new DbQuery();
+        $sql->select('previous_lowest_price, current_price, previous_price_timestamp, current_price_timestamp');
+        $sql->from($tableName);
+        $sql->where('id_product = ' . (int)$id_product);
+        $sql->where('id_product_attribute = 0');
+        $result = Db::getInstance()->getRow($sql);
+
+        return $result['previous_lowest_price'];
+
+    }
+
+
+    public function getPreviousLowestProductPrice($id_product, $id_product_attribute) {
+
+        $tableName = self::TABLE_NAME;
+
+        $basePrice = $this->getBaseProductPrice($id_product);
+
+        if($id_product_attribute === 0)
+            return $basePrice;
+
+        $sql = new DbQuery();
+        $sql->select('previous_lowest_price');
+        $sql->from($tableName);
+        $sql->where('id_product = ' . (int)$id_product);
+        $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
+        $attributePriceChange = Db::getInstance()->getValue($sql);
+
+
+        return $attributePriceChange;
     }
 
     public function hookDisplayProductPriceBlock($params)
     {
+
         if ($params['type'] == 'after_price') {
             $id_product = (int)$params['product']['id_product'];
-            $lastPriceChange = $this->getLastPriceChange($id_product);
-
             $id_product_attribute = null;
 
             if (isset($params['product']['id_product_attribute'])) {
                 $id_product_attribute = (int)$params['product']['id_product_attribute'];
             }
 
-            $lowestPrice = $this->getLowestPriceInLast30Days($id_product, $id_product_attribute);
-
+            $lowestPrice = $this->getPreviousLowestProductPrice($id_product, $id_product_attribute);
             $this->context->smarty->assign(array(
-                'lastPriceChange' => $lastPriceChange,
-                'lowestPrice' => $lowestPrice,
+                'lowestPrice' => $lowestPrice ? $lowestPrice : null,
             ));
 
             return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
         }
+
     }
 
-    private function getLastPriceChange($id_product)
-    {
-        $sql = new DbQuery();
-        $sql->select('*');
-        $sql->from('price_log');
-        $sql->where('id_product = ' . (int)$id_product);
-        $sql->orderBy('date_upd DESC');
-//        $sql->limit(1);
 
-        return Db::getInstance()->getRow($sql);
-    }
-
-    public function getLowestPriceInLast30Days($id_product, $id_product_attribute = null)
-    {
-        $thirtyDaysAgo = date('Y-m-d H:i:s', strtotime('-30 days'));
-
-        $sql = new DbQuery();
-        $sql->select('MIN(price) as lowest_price');
-        $sql->from('price_log');
-        $sql->where('id_product = ' . (int)$id_product);
-
-        if ($id_product_attribute !== null) {
-            $sql->where('id_product_attribute = ' . (int)$id_product_attribute);
-        }
-
-        $sql->where('date_upd >= \'' . pSQL($thirtyDaysAgo) . '\'');
-
-        $result = Db::getInstance()->getRow($sql);
-
-        return $result ? $result['lowest_price'] : null;
-    }
-
-    private function logPriceChange($id_product, $id_product_attribute, $price)
-    {
-        Db::getInstance()->insert('price_log', array(
-            'id_product' => $id_product,
-            'id_product_attribute' => $id_product_attribute,
-            'price' => $price,
-            'date_upd' => date('Y-m-d H:i:s'),
-        ));
-    }
 }
