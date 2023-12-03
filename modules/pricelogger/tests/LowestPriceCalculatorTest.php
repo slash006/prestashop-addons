@@ -19,9 +19,7 @@ class LowestPriceCalculator {
 
             return $difference <= 30;
         });
-
-//        print_r($filteredEntries);
-
+        
         return $filteredEntries;
     }
 
@@ -42,7 +40,7 @@ class LowestPriceCalculator {
 
             }
         }
-        
+
         return array(
             "lowest_price" => $lowestPrice,
             "current_price" => $currentPrice
