@@ -49,30 +49,31 @@ class LowestPriceCalculator
         }
 
 
-        $result = array(
+        return array(
             "lowest_price" => $lowestPrice,
             "current_price" => $currentPrice,
             "current_attribute_price" => null
         );
 
-        return $result;
-
     }
 
     public function findLowestPriceForAttribute($productLog, $targetAttributeId) {
         $maxDiscount = null;
-        $lastBasePriceBeforeMaxDiscount = null;
+        $lowestBasePrice = PHP_INT_MAX;
+        $lowestPriceWithDiscount = PHP_INT_MAX;
+        $productLog = $this->filterRecentEntries($productLog);
 
-        // Find the maximum discount for the target attribute
         foreach ($productLog as $entry) {
             if ($entry['id_product_attribute'] == $targetAttributeId) {
                 if ($maxDiscount === null || $entry['price'] < $maxDiscount) {
                     $maxDiscount = $entry['price'];
                 }
             }
+            if ($entry['id_product_attribute'] == 0 && $entry['price'] < $lowestBasePrice) {
+                $lowestBasePrice = $entry['price'];
+            }
         }
 
-        // Find the last base price before the maximum discount
         $foundMaxDiscount = false;
         foreach (array_reverse($productLog) as $entry) {
             if ($entry['id_product_attribute'] == $targetAttributeId && $entry['price'] == $maxDiscount) {
@@ -80,20 +81,12 @@ class LowestPriceCalculator
             }
 
             if ($foundMaxDiscount && $entry['id_product_attribute'] == 0) {
-                $lastBasePriceBeforeMaxDiscount = $entry['price'];
+                $lowestPriceWithDiscount = $entry['price'] + $maxDiscount;
                 break;
             }
         }
 
-        if ($lastBasePriceBeforeMaxDiscount === null) {
-            return null; // No valid base price found before the max discount
-        }
-
-        // Calculate the lowest possible price
-        $lowestPrice = $lastBasePriceBeforeMaxDiscount + $maxDiscount;
-
-        return $lowestPrice;
-
+        return min($lowestBasePrice, $lowestPriceWithDiscount);
     }
 }
 
@@ -189,13 +182,15 @@ class LowestPriceCalculatorTest extends PHPUnit\Framework\TestCase {
     public function testCalculateLowestMixedWithCombinationsBaseLowest() {
 
         $productLog = [
-            array("id" => 1, "id_product" => 500, "id_product_attribute" => 0, "price" => 1750, "timestamp" => "2023-12-01 13:50:05"),
-            array("id" => 2, "id_product" => 500, "id_product_attribute" => 0, "price" => 2000, "timestamp" => "2023-12-02 13:50:05"),
-            array("id" => 3, "id_product" => 500, "id_product_attribute" => 0, "price" => 3500, "timestamp" => "2023-12-03 15:00:05"),
-            array("id" => 4, "id_product" => 500, "id_product_attribute" => 2000, "price" => -200, "timestamp" => "2023-12-04 20:50:05"),
-            array("id" => 5, "id_product" => 500, "id_product_attribute" => 2000, "price" => -700, "timestamp" => "2023-12-05 20:50:05"),
-            array("id" => 6, "id_product" => 500, "id_product_attribute" => 2000, "price" => -900, "timestamp" => "2023-12-06 20:50:05"),
-            array("id" => 7, "id_product" => 500, "id_product_attribute" => 0, "price" => 4000, "timestamp" => "2023-12-07 15:00:05"),
+            array("id" => 1, "id_product" => 500, "id_product_attribute" => 0, "price" => 1250, "timestamp" => "2023-10-01 13:50:05"),
+            array("id" => 2, "id_product" => 500, "id_product_attribute" => 0, "price" => 3000, "timestamp" => "2023-11-01 13:50:05"),
+            array("id" => 3, "id_product" => 500, "id_product_attribute" => 0, "price" => 1750, "timestamp" => "2023-12-01 13:50:05"),
+            array("id" => 4, "id_product" => 500, "id_product_attribute" => 0, "price" => 2000, "timestamp" => "2023-12-02 13:50:05"),
+            array("id" => 5, "id_product" => 500, "id_product_attribute" => 0, "price" => 3500, "timestamp" => "2023-12-03 15:00:05"),
+            array("id" => 6, "id_product" => 500, "id_product_attribute" => 2000, "price" => -200, "timestamp" => "2023-12-04 20:50:05"),
+            array("id" => 7, "id_product" => 500, "id_product_attribute" => 2000, "price" => -700, "timestamp" => "2023-12-05 20:50:05"),
+            array("id" => 8, "id_product" => 500, "id_product_attribute" => 2000, "price" => -900, "timestamp" => "2023-12-06 20:50:05"),
+            array("id" => 9, "id_product" => 500, "id_product_attribute" => 0, "price" => 4000, "timestamp" => "2023-12-07 15:00:05"),
 
         ];
 
