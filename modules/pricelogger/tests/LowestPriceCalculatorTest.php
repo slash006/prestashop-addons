@@ -6,6 +6,7 @@ class LowestPriceCalculator
     private function getBaseProductPrice()
     {
 
+        //TODO: use data from Product::
         return 4000;
     }
 
@@ -190,6 +191,7 @@ class LowestPriceCalculatorTest extends PHPUnit\Framework\TestCase {
             array("id" => 6, "id_product" => 500, "id_product_attribute" => 2000, "price" => -200, "timestamp" => "2023-12-04 20:50:05"),
             array("id" => 7, "id_product" => 500, "id_product_attribute" => 2000, "price" => -700, "timestamp" => "2023-12-05 20:50:05"),
             array("id" => 8, "id_product" => 500, "id_product_attribute" => 2000, "price" => -900, "timestamp" => "2023-12-06 20:50:05"),
+            array("id" => 8, "id_product" => 500, "id_product_attribute" => 2020, "price" => -1900, "timestamp" => "2023-12-06 20:50:05"),
             array("id" => 9, "id_product" => 500, "id_product_attribute" => 0, "price" => 4000, "timestamp" => "2023-12-07 15:00:05"),
 
         ];
