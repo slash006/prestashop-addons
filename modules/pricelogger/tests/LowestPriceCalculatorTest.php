@@ -1,38 +1,45 @@
 <?php
 
-class LowestPriceCalculator {
+class LowestPriceCalculator
+{
 
-    private function getBaseProductPrice() {
+    private function getBaseProductPrice()
+    {
 
         return 4000;
     }
 
-    private function filterRecentEntries($productData) {
+    private function filterRecentEntries($productData)
+    {
         if (empty($productData)) {
             return [];
         }
 
         $lastTimestamp = new DateTime(end($productData)['timestamp']);
-        $filteredEntries = array_filter($productData, function($entry) use ($lastTimestamp) {
+        $filteredEntries = array_filter($productData, function ($entry) use ($lastTimestamp) {
             $entryTimestamp = new DateTime($entry['timestamp']);
             $difference = $lastTimestamp->diff($entryTimestamp)->days;
 
             return $difference <= 30;
         });
-        
+
         return $filteredEntries;
     }
 
-    public function calculateLowestPrice($productData) {
+    public function calculateLowestPrice($productData)
+    {
 
         $productData = $this->filterRecentEntries($productData);
         $currentPrice = end($productData)["price"];
-        $lowestPrice =  $this->getBaseProductPrice();
+        $lowestPrice = $this->getBaseProductPrice();
         $i = 0;
 
         foreach ($productData as $element) {
             $i++;
-            if($i === count($productData))
+            if ($i === count($productData))
+                continue;
+
+            if ($element['id_product_attribute'] !== 0)
                 continue;
 
             if ($element['price'] < $lowestPrice) {
@@ -41,10 +48,51 @@ class LowestPriceCalculator {
             }
         }
 
-        return array(
+
+        $result = array(
             "lowest_price" => $lowestPrice,
-            "current_price" => $currentPrice
+            "current_price" => $currentPrice,
+            "current_attribute_price" => null
         );
+
+        return $result;
+
+    }
+
+    public function findLowestPriceForAttribute($productLog, $targetAttributeId) {
+        $maxDiscount = null;
+        $lastBasePriceBeforeMaxDiscount = null;
+
+        // Find the maximum discount for the target attribute
+        foreach ($productLog as $entry) {
+            if ($entry['id_product_attribute'] == $targetAttributeId) {
+                if ($maxDiscount === null || $entry['price'] < $maxDiscount) {
+                    $maxDiscount = $entry['price'];
+                }
+            }
+        }
+
+        // Find the last base price before the maximum discount
+        $foundMaxDiscount = false;
+        foreach (array_reverse($productLog) as $entry) {
+            if ($entry['id_product_attribute'] == $targetAttributeId && $entry['price'] == $maxDiscount) {
+                $foundMaxDiscount = true;
+            }
+
+            if ($foundMaxDiscount && $entry['id_product_attribute'] == 0) {
+                $lastBasePriceBeforeMaxDiscount = $entry['price'];
+                break;
+            }
+        }
+
+        if ($lastBasePriceBeforeMaxDiscount === null) {
+            return null; // No valid base price found before the max discount
+        }
+
+        // Calculate the lowest possible price
+        $lowestPrice = $lastBasePriceBeforeMaxDiscount + $maxDiscount;
+
+        return $lowestPrice;
 
     }
 }
@@ -112,6 +160,53 @@ class LowestPriceCalculatorTest extends PHPUnit\Framework\TestCase {
 
         $this->assertEquals(2500, $result['current_price']);
         $this->assertEquals(3150, $result['lowest_price']);
+    }
+
+    public function testCalculateLowestMixedWithCombinations() {
+
+        $productLog = [
+            array("id" => 1, "id_product" => 500, "id_product_attribute" => 0, "price" => 4000, "timestamp" => "2023-12-01 13:50:05"),
+            array("id" => 2, "id_product" => 500, "id_product_attribute" => 0, "price" => 2900, "timestamp" => "2023-12-02 13:50:05"),
+            array("id" => 3, "id_product" => 500, "id_product_attribute" => 0, "price" => 3500, "timestamp" => "2023-12-03 15:00:05"),
+            array("id" => 4, "id_product" => 500, "id_product_attribute" => 2000, "price" => -200, "timestamp" => "2023-12-04 20:50:05"),
+            array("id" => 5, "id_product" => 500, "id_product_attribute" => 2000, "price" => -700, "timestamp" => "2023-12-05 20:50:05"),
+            array("id" => 6, "id_product" => 500, "id_product_attribute" => 2000, "price" => -100, "timestamp" => "2023-12-06 20:50:05"),
+            array("id" => 7, "id_product" => 500, "id_product_attribute" => 0, "price" => 3300, "timestamp" => "2023-12-07 15:00:05"),
+
+        ];
+
+        $calculator = new LowestPriceCalculator();
+
+        //SQL id_product = 500 AND (id_product_attribute = 200 OR  id_product_attribute = 0)
+        $result = $calculator->calculateLowestPrice($productLog);
+
+        $this->assertEquals(3300, $result['current_price']);
+        $this->assertEquals(2900, $result['lowest_price']);
+        $this->assertEquals(2800, $calculator->findLowestPriceForAttribute($productLog, 2000));
+    }
+
+
+    public function testCalculateLowestMixedWithCombinationsBaseLowest() {
+
+        $productLog = [
+            array("id" => 1, "id_product" => 500, "id_product_attribute" => 0, "price" => 1750, "timestamp" => "2023-12-01 13:50:05"),
+            array("id" => 2, "id_product" => 500, "id_product_attribute" => 0, "price" => 2000, "timestamp" => "2023-12-02 13:50:05"),
+            array("id" => 3, "id_product" => 500, "id_product_attribute" => 0, "price" => 3500, "timestamp" => "2023-12-03 15:00:05"),
+            array("id" => 4, "id_product" => 500, "id_product_attribute" => 2000, "price" => -200, "timestamp" => "2023-12-04 20:50:05"),
+            array("id" => 5, "id_product" => 500, "id_product_attribute" => 2000, "price" => -700, "timestamp" => "2023-12-05 20:50:05"),
+            array("id" => 6, "id_product" => 500, "id_product_attribute" => 2000, "price" => -900, "timestamp" => "2023-12-06 20:50:05"),
+            array("id" => 7, "id_product" => 500, "id_product_attribute" => 0, "price" => 4000, "timestamp" => "2023-12-07 15:00:05"),
+
+        ];
+
+        $calculator = new LowestPriceCalculator();
+
+        //SQL id_product = 500 AND (id_product_attribute = 200 OR  id_product_attribute = 0)
+        $result = $calculator->calculateLowestPrice($productLog);
+
+        $this->assertEquals(4000, $result['current_price']);
+        $this->assertEquals(1750, $result['lowest_price']);
+        $this->assertEquals(1750, $calculator->findLowestPriceForAttribute($productLog, 2000));
     }
 
 }
