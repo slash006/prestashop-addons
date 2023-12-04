@@ -26,7 +26,7 @@ class LowestPriceCalculator
 
         return $filteredEntries;
     }
-    
+
     public function findLowestPrice($productData, $showDebug = false): array
     {
 
@@ -180,7 +180,7 @@ class LowestPriceCalculatorTest extends PHPUnit\Framework\TestCase {
         //SQL id_product = 500 AND (id_product_attribute = 2000 OR  id_product_attribute = 0)
         $result = $calculator->findLowestPrice($productLog);
 
-        $this->assertEquals(4000, $result['current_price']);
+        $this->assertEquals(4000, $result['current_price']); //TODO it should return 4000 - 1900?
         $this->assertEquals(1600, $result['lowest_price']);
     }
 
