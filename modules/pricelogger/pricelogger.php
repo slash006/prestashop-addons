@@ -46,14 +46,17 @@ class PriceLogger extends Module
     protected function installDb()
     {
         $tableName = _DB_PREFIX_ . self::TABLE_NAME;
-        $sql = "CREATE TABLE IF NOT EXISTS $tableName (
-                    id INT NOT NULL AUTO_INCREMENT,
-                    id_product INT NOT NULL,
-                    id_product_attribute INT NOT NULL DEFAULT 0,
-                    price DECIMAL(20,6),
-                    added_timestamp DATETIME,
-                    PRIMARY KEY (id)
-                );";
+        $sql = 'CREATE TABLE IF NOT EXISTS `' . $tableName . '` (
+            `id_product` int(11) NOT NULL,
+            `id_product_attribute` int(11) NOT NULL,
+            `lowest_price` decimal(20,6) NOT NULL,
+            `last_price` decimal(20,6) NOT NULL,
+            `lowest_timestamp` datetime NOT NULL,
+            `last_timestamp` datetime NOT NULL,
+            PRIMARY KEY (`id_product`, `id_product_attribute`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8;';
+
+        return Db::getInstance()->execute($sql);
 
         return Db::getInstance()->execute($sql);
     }
@@ -71,40 +74,97 @@ class PriceLogger extends Module
     {
         $this->uninstallTriggers();
 
-        $tableName = _DB_PREFIX_ . self::TABLE_NAME;
+        /*        $tableName = _DB_PREFIX_ . self::TABLE_NAME;
+                $product = file_get_contents($this->local_path.'/sql/trigger_before_product_update.sql');*/
 
         $sql = [
             // Trigger for ps_product
-            "CREATE TRIGGER after_product_update
-        AFTER UPDATE ON " . _DB_PREFIX_ . "product
-        FOR EACH ROW
-        BEGIN
+            "CREATE TRIGGER before_product_update
+    BEFORE UPDATE ON ps_product
+    FOR EACH ROW
+BEGIN
+    DECLARE currentLowestPrice DECIMAL(20,6);
+    DECLARE newProductPrice DECIMAL(20,6);
+    DECLARE oldProductPrice DECIMAL(20,6);
+    DECLARE attributePrice DECIMAL(20,6);
+    DECLARE lowestPriceTime DATETIME;
+    DECLARE lastPriceTime DATETIME;
+    DECLARE attributeID INT;
+    DECLARE attributesFound INT DEFAULT 0;
 
-            IF NEW.price <> OLD.price THEN
-                INSERT INTO {$tableName} (id_product, id_product_attribute, price, added_timestamp)
-                VALUES (NEW.id_product, 0, OLD.price, NOW());
-                
-                INSERT INTO {$tableName} (id_product, id_product_attribute, price, added_timestamp)
-                VALUES (NEW.id_product, 0, NEW.price, NOW());
-                
-            END IF;
-        END",
+    DECLARE done INT DEFAULT FALSE;
+    DECLARE attributeCursor CURSOR FOR SELECT id_product_attribute, price FROM ps_product_attribute WHERE id_product = OLD.id_product;
+    DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = TRUE;
+
+    IF OLD.price <> NEW.price THEN
+        SET oldProductPrice = OLD.price;
+    OPEN attributeCursor;
+    read_loop: LOOP
+            FETCH attributeCursor INTO attributeID, attributePrice;
+            IF done THEN
+                LEAVE read_loop;
+END IF;
+SET attributesFound = 1;
+
+            SET newProductPrice = NEW.price + attributePrice;
+
+            IF NOT EXISTS (SELECT 1 FROM ps_price_log WHERE id_product = OLD.id_product AND id_product_attribute = attributeID) THEN
+                INSERT INTO ps_price_log (id_product, id_product_attribute, lowest_price, last_price, lowest_timestamp, last_timestamp)
+                VALUES (OLD.id_product, attributeID, oldProductPrice + attributePrice, newProductPrice, NOW(), NOW());
+ELSE
+
+    SELECT lowest_price, lowest_timestamp, last_timestamp INTO currentLowestPrice, lowestPriceTime, lastPriceTime FROM ps_price_log WHERE id_product = OLD.id_product AND id_product_attribute = attributeID;
+    IF oldProductPrice + attributePrice < currentLowestPrice THEN
+        UPDATE ps_price_log SET lowest_price = oldProductPrice + attributePrice, lowest_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = attributeID;
+    END IF;
+
+    UPDATE ps_price_log SET last_price = newProductPrice, last_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = attributeID;
+END IF;
+
+END LOOP;
+CLOSE attributeCursor;
+
+IF attributesFound = 0 THEN
+            IF NOT EXISTS (SELECT 1 FROM ps_price_log WHERE id_product = OLD.id_product AND id_product_attribute = 0) THEN
+                INSERT INTO ps_price_log (id_product, id_product_attribute, lowest_price, last_price, lowest_timestamp, last_timestamp)
+                VALUES (OLD.id_product, 0, oldProductPrice, NEW.price, NOW(), NOW());
+ELSE
+UPDATE ps_price_log SET last_price = NEW.price, last_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = 0;
+END IF;
+END IF;
+END IF;
+END;
+",
 
             // Trigger for ps_product_attribute
-            "CREATE TRIGGER after_product_attribute_update
-        AFTER UPDATE ON " . _DB_PREFIX_ . "product_attribute
-        FOR EACH ROW
-        BEGIN
-            IF NEW.price <> OLD.price THEN
+            "CREATE TRIGGER before_product_attribute_update
+    BEFORE UPDATE ON ps_product_attribute
+    FOR EACH ROW
+BEGIN
+    DECLARE currentLowestPrice DECIMAL(20,6);
+    DECLARE basePrice DECIMAL(20,6);
+    DECLARE lowestPriceTime DATETIME;
+    DECLARE lastPriceTime DATETIME;
 
-                INSERT INTO {$tableName} (id_product, id_product_attribute, price, added_timestamp)
-                VALUES (NEW.id_product, NEW.id_product_attribute, OLD.price, NOW());
-                
-                INSERT INTO {$tableName} (id_product, id_product_attribute, price, added_timestamp)
-                VALUES (NEW.id_product, NEW.id_product_attribute, NEW.price, NOW());
-                
-            END IF;
-        END"
+    SELECT price INTO basePrice FROM ps_product WHERE id_product = OLD.id_product;
+
+    IF OLD.price <> NEW.price THEN
+        IF NOT EXISTS (SELECT 1 FROM ps_price_log WHERE id_product = OLD.id_product AND id_product_attribute = OLD.id_product_attribute) THEN
+            INSERT INTO ps_price_log (id_product, id_product_attribute, lowest_price, last_price, lowest_timestamp, last_timestamp)
+            VALUES (OLD.id_product, OLD.id_product_attribute, basePrice + OLD.price, basePrice + NEW.price, NOW(), NOW());
+    ELSE
+    SELECT lowest_price, lowest_timestamp, last_timestamp INTO currentLowestPrice, lowestPriceTime, lastPriceTime FROM ps_price_log WHERE id_product = OLD.id_product AND id_product_attribute = OLD.id_product_attribute;
+
+    IF OLD.price + basePrice < currentLowestPrice THEN
+    UPDATE ps_price_log SET lowest_price = OLD.price + basePrice, lowest_timestamp = lastPriceTime WHERE id_product = OLD.id_product AND id_product_attribute = OLD.id_product_attribute;
+END IF;
+
+UPDATE ps_price_log SET last_price = NEW.price + basePrice, last_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = OLD.id_product_attribute;
+
+END IF;
+END IF;
+END;
+"
         ];
 
         foreach ($sql as $query) {
@@ -120,10 +180,10 @@ class PriceLogger extends Module
     {
         $sql = [
             // Remove trigger for ps_product
-            "DROP TRIGGER IF EXISTS after_product_update",
+            "DROP TRIGGER IF EXISTS before_product_update",
 
             // Remove trigger for ps_product_attribute
-            "DROP TRIGGER IF EXISTS after_product_attribute_update"
+            "DROP TRIGGER IF EXISTS before_product_attribute_update"
         ];
 
         foreach ($sql as $query) {
@@ -197,27 +257,39 @@ class PriceLogger extends Module
         return $basePrice + $attributePriceChange;
     }
 
+    public function getLowestLastPricePairForProduct($id_product, $id_product_attribute = 0) {
+
+        $tableName = self::TABLE_NAME;
+
+        $query = new DbQuery();
+        $query->select('lowest_price, last_price');
+        $query->from($tableName);
+        $query->where('id_product = '.(int)$id_product.' AND id_product_attribute = '.(int)$id_product_attribute);
+        $priceData = Db::getInstance()->getRow($query);
+
+
+        return $priceData;
+
+    }
+
     public function hookDisplayProductPriceBlock($params)
     {
 
         if ($params['type'] == 'after_price') {
             $id_product = (int)$params['product']['id_product'];
-            $id_product_attribute = null;
 
             if (isset($params['product']['id_product_attribute'])) {
                 $id_product_attribute = (int)$params['product']['id_product_attribute'];
 
-                $baseProductLowestPrice = $this->getLowestPriceBeforeLastPromotion($id_product, 0);
-                $lowestPrice = $baseProductLowestPrice + $this->getLowestPriceBeforeLastPromotion($id_product, $id_product_attribute);
+                $price = $this->getLowestLastPricePairForProduct($id_product, $id_product_attribute);
+
             }
 
-            else {
-                $lowestPrice = $this->getLowestPriceBeforeLastPromotion($id_product, $id_product_attribute);
-            }
 
 
             $this->context->smarty->assign(array(
-                'lowestPrice' => $lowestPrice ?: null,
+                'lowestPrice' => $price["lowest_price"] ?: null,
+//                'lastPrice' => $price["last_price"] ?: null,
             ));
 
             return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
