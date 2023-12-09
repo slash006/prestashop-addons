@@ -114,6 +114,11 @@ SET attributesFound = 1;
 ELSE
 
     SELECT lowest_price, lowest_timestamp, last_timestamp INTO currentLowestPrice, lowestPriceTime, lastPriceTime FROM ps_price_log WHERE id_product = OLD.id_product AND id_product_attribute = attributeID;
+    
+    IF DATEDIFF(lastPriceTime, lowestPriceTime) > 30 THEN
+                UPDATE ps_price_log SET lowest_price = last_price, lowest_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = attributeID;
+            END IF;
+    
     IF oldProductPrice + attributePrice < currentLowestPrice THEN
         UPDATE ps_price_log SET lowest_price = oldProductPrice + attributePrice, lowest_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = attributeID;
     END IF;
@@ -155,7 +160,7 @@ BEGIN
             INSERT INTO ps_price_log (id_product, id_product_attribute, lowest_price, last_price, lowest_timestamp, last_timestamp)
             VALUES (OLD.id_product, OLD.id_product_attribute, basePrice + OLD.price, basePrice + NEW.price, NOW(), NOW());
         ELSE
-            IF DATEDIFF(NOW(), lowestPriceTime) > 30 THEN
+            IF DATEDIFF(lastPriceTime, lowestPriceTime) > 30 THEN
                 SET currentLowestPrice = NEW.price + basePrice;
                 SET lowestPriceTime = lastPriceTime;
             END IF;
@@ -289,8 +294,6 @@ END
                 $price = $this->getLowestLastPricePairForProduct($id_product, $id_product_attribute);
 
             }
-
-
 
             $this->context->smarty->assign(array(
                 'lowestPrice' => $price["lowest_price"] ?: null,
