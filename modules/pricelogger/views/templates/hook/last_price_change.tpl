@@ -4,7 +4,7 @@
 {if isset($lastPrice)}
     <div class="previous-price-info">
         {assign var="prevPriceWithTax" value=$lastPrice * (1 + $taxRate)}
-        <p class="previous-price"><del>{$prevPriceWithTax|number_format:2:',':' '|escape:'html':'UTF-8'}</del></p>
+        <p class="previous-price"><del>{$prevPriceWithTax|number_format:2:',':' '|escape:'html':'UTF-8'}zł.</del></p>
     </div>
 {/if}
 

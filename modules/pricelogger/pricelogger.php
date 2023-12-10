@@ -295,9 +295,13 @@ END
 
             }
 
+            $product = new Product($id_product);
+            $current_price = $product->getPrice(false, $id_product_attribute, 6);
+
+
             $this->context->smarty->assign(array(
                 'lowestPrice' => $price["lowest_price"] ?: null,
-                'lastPrice' => $price["last_price"] ?: null,
+                'lastPrice' => ($price["last_price"] && ($current_price < $price["last_price"])) ? $price["last_price"] : null,
             ));
 
             return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
