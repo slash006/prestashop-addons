@@ -12,7 +12,7 @@ class PriceLogger extends Module
     {
         $this->name = 'pricelogger';
         $this->tab = 'front_office_features';
-        $this->version = '1.0.2';
+        $this->version = '1.0.3';
         $this->author = 'slash006';
         $this->need_instance = 0;
         $this->ps_versions_compliancy = array('min' => '1.7', 'max' => _PS_VERSION_);
@@ -123,7 +123,7 @@ ELSE
         UPDATE ps_price_log SET lowest_price = oldProductPrice + attributePrice, lowest_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = attributeID;
     END IF;
 
-    UPDATE ps_price_log SET last_price = newProductPrice, last_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = attributeID;
+    UPDATE ps_price_log SET last_price = oldProductPrice + attributePrice, last_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = attributeID;
 END IF;
 
 END LOOP;
@@ -134,7 +134,7 @@ IF attributesFound = 0 THEN
                 INSERT INTO ps_price_log (id_product, id_product_attribute, lowest_price, last_price, lowest_timestamp, last_timestamp)
                 VALUES (OLD.id_product, 0, oldProductPrice, NEW.price, NOW(), NOW());
 ELSE
-UPDATE ps_price_log SET last_price = NEW.price, last_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = 0;
+UPDATE ps_price_log SET last_price = OLD.price, last_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = 0;
 END IF;
 END IF;
 END IF;
@@ -169,7 +169,7 @@ BEGIN
                 UPDATE ps_price_log SET lowest_price = OLD.price + basePrice, lowest_timestamp = lowestPriceTime WHERE id_product = OLD.id_product AND id_product_attribute = OLD.id_product_attribute;
             END IF;
 
-            UPDATE ps_price_log SET last_price = NEW.price + basePrice, last_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = OLD.id_product_attribute;
+            UPDATE ps_price_log SET last_price = OLD.price + basePrice, last_timestamp = NOW() WHERE id_product = OLD.id_product AND id_product_attribute = OLD.id_product_attribute;
         END IF;
     END IF;
 END
@@ -297,7 +297,7 @@ END
 
             $this->context->smarty->assign(array(
                 'lowestPrice' => $price["lowest_price"] ?: null,
-//                'lastPrice' => $price["last_price"] ?: null,
+                'lastPrice' => $price["last_price"] ?: null,
             ));
 
             return $this->display(__FILE__, 'views/templates/hook/last_price_change.tpl');
